@@ -37,6 +37,8 @@ namespace Internal {
 
 class IRPrinter : public IRVisitor {
  public:
+    std::string global_index;
+    std::string global_type;
     IRPrinter() : IRVisitor() {
         indent = 0;
         print_range = false;

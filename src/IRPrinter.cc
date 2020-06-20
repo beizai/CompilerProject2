@@ -51,36 +51,43 @@ std::string IRPrinter::print(const Group &group) {
 
 
 void IRPrinter::visit(Ref<const IntImm> op) {
-    oss << "(" << op->type() << " " << op->value() << ")";
+	oss << op->value();
+    //oss << "(" << op->type() << " " << op->value() << ")";
 }
 
 
 void IRPrinter::visit(Ref<const UIntImm> op) {
-    oss << "(" << op->type() << " " << op->value() << ")";
+    oss << op->value();
+    //oss << "(" << op->type() << " " << op->value() << ")";
 }
 
 
 void IRPrinter::visit(Ref<const FloatImm> op) {
-    oss << "(" << op->type() << " " << op->value() << ")";
+    oss << op->value();
+    //oss << "(" << op->type() << " " << op->value() << ")";
 }
 
 
 void IRPrinter::visit(Ref<const StringImm> op) {
-    oss << "(" << op->type() << " " << op->value() << ")";
+    oss << op->value();
+    //oss << "(" << op->type() << " " << op->value() << ")";
 }
 
 
 void IRPrinter::visit(Ref<const Unary> op) {
+    oss << "(";
     if (op->op_type == UnaryOpType::Neg) {
         oss << "-";
     } else if (op->op_type == UnaryOpType::Not) {
         oss << "!";
     }
     (op->a).visit_expr(this);
+    oss << ")";
 }
 
 
 void IRPrinter::visit(Ref<const Binary> op) {
+    oss << "(";
     (op->a).visit_expr(this);
     if (op->op_type == BinaryOpType::Add) {
         oss << " + ";
@@ -98,6 +105,7 @@ void IRPrinter::visit(Ref<const Binary> op) {
         oss << " || ";
     }
     (op->b).visit_expr(this);
+    oss << ")";
 }
 
 
@@ -162,6 +170,25 @@ void IRPrinter::visit(Ref<const Ramp> op) {
 
 
 void IRPrinter::visit(Ref<const Var> op) {
+	if (print_arg) {
+		//oss << type;
+		oss << "(&" << op->name << ")";
+		if (op->shape.size() == 1 && op->shape[0] == 1)
+			return;
+		for (size_t i = 0; i < op->shape.size(); ++i) {
+			oss << "[" << op->shape[i] << "]";
+		}
+	} else {
+		oss << op->name;
+		if (op->shape.size() == 1 && op->shape[0] == 1)
+			return;
+		for (size_t i = 0; i < op->shape.size(); ++i) {
+			oss << "[";
+			op->args[i].visit_expr(this);
+			oss << "]";
+		}
+	}
+	/*
     oss << op->name;
     if (print_arg) {
         oss << "<";
@@ -181,21 +208,33 @@ void IRPrinter::visit(Ref<const Var> op) {
             }
         }
         oss << "]";
-    }
+    }*/
 }
 
-
 void IRPrinter::visit(Ref<const Dom> op) {
-    oss << "dom[";
+	(op->begin).visit_expr(this);
+	oss << "; " << global_index << " < ";
+	(op->extent).visit_expr(this);
+	
+	oss << "; ++" << global_index;
+	
+    /*oss << "dom[";
     (op->begin).visit_expr(this);
     oss << ", ";
     (op->extent).visit_expr(this);
-    oss << ")";
+    oss << ")";*/
 }
 
 
 void IRPrinter::visit(Ref<const Index> op) {
-    oss << op->name;
+	global_index = op->name;
+	if (print_range) {
+		oss << "int " << op->name << " = ";
+		
+		(op->dom).visit_expr(this);
+	} else oss << op->name;
+	
+    /*oss << op->name;
     if (print_range) {
         oss << "<";
         if (op->index_type == IndexType::Spatial) {
@@ -213,7 +252,7 @@ void IRPrinter::visit(Ref<const Index> op) {
         }
         oss << "> in ";
         (op->dom).visit_expr(this);
-    }
+    }*/
 }
 
 
@@ -221,9 +260,9 @@ void IRPrinter::visit(Ref<const LoopNest> op) {
     print_range = true;
     for (auto index : op->index_list) {
         print_indent();
-        oss << "for ";
+        oss << "for (";
         index.visit_expr(this);
-        oss << "{\n";
+        oss << ") {\n";
         enter();
     }
     print_range = false;
@@ -247,17 +286,22 @@ void IRPrinter::visit(Ref<const IfThenElse> op) {
     (op->true_case).visit_stmt(this);
     exit();
     print_indent();
-    oss << "} else {\n";
+    oss << "}\n";  /* else {\n";
     enter();
     (op->false_case).visit_stmt(this);
     exit();
     print_indent();
-    oss << "}\n";
+    oss << "}\n";*/
 }
 
 
 void IRPrinter::visit(Ref<const Move> op) {
-    print_indent();
+	print_indent();
+    (op->dst).visit_expr(this);
+    oss << " = ";
+    (op->src).visit_expr(this);
+    oss << ";\n";
+    /*print_indent();
     (op->dst).visit_expr(this);
     oss << " =<";
     if (op->move_type == MoveType::HostToDevice) {
@@ -283,13 +327,33 @@ void IRPrinter::visit(Ref<const Move> op) {
     }
     oss << "> ";
     (op->src).visit_expr(this);
-    oss << "\n";
+    oss << "\n";*/
 }
 
 
 void IRPrinter::visit(Ref<const Kernel> op) {
     print_indent();
-    if (op->kernel_type == KernelType::CPU) {
+    /*oss << "void " << op->name << "(";
+    print_arg = true;
+    for (size_t i = 0; i < op->inputs.size(); ++i) {
+    	op->inputs[i].visit_expr(this);
+    	if (i < op->inputs.size() - 1)
+    		oss << ",";
+    }
+    for (size_t i = 0; i < op->outputs.size(); ++i) {
+        oss << ", ";
+        op->outputs[i].visit_expr(this);
+    }
+	print_arg = false;
+    oss << ") {\n";*/
+    enter();
+    for (auto stmt : op->stmt_list) {
+        stmt.visit_stmt(this);
+    }
+    exit();
+    //oss << "}\n";
+    
+    /*if (op->kernel_type == KernelType::CPU) {
         oss << "<CPU>";
     } else if (op->kernel_type == KernelType::GPU) {
         oss << "<GPU>";
@@ -313,7 +377,7 @@ void IRPrinter::visit(Ref<const Kernel> op) {
         stmt.visit_stmt(this);
     }
     exit();
-    oss << "}\n";
+    oss << "}\n";*/
 }
 
 
